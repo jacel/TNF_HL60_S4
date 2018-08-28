@@ -23,16 +23,16 @@ ggformat <- theme_classic(base_family = "Arial") + theme(text = element_text(siz
 ```
 
 ```{r}
-all <- read.csv("HL60_ATRA_TNF_all.csv")
-long <- read.csv("TNF_diff_longform.csv")
+all <- read.csv("../results/HL60_ATRA_TPA_TNF_all.csv")
+long <- read.csv("../results/TNF_diff_longform.csv")
 
-TNF1 <- read.csv("TNF_response_level1.csv")
-TNF2 <- read.csv("TNF_response_level2.csv")
+TNF1 <- read.csv("../results/TNF_response_level1.csv")
+TNF2 <- read.csv("../results/TNF_response_level2.csv")
 ```
 
 ```{r}
-tnf_genes <- read.csv("gene_universe_tnf.csv")
-g2o_full <- readRDS('../biomart_gene_ontology.rds')
+tnf_genes <- read.csv("../results/gene_universe_tnf.csv")
+g2o_full <- readRDS('../data/biomart_gene_ontology.rds')
 g2o <- g2o_full %>%
   filter(go_id != "") %>%
   filter(ensembl_gene_id %in% tnf_genes$x)
@@ -41,6 +41,15 @@ geneID2GO <- by(g2o$go_id,
                 function(x) as.character(x))
 geneUniverse <- names(geneID2GO)
 ```
+
+In order to use gene sets in clusterProfiler you need to get them into the clusterProfiler package. There may be a simpler way to do this, but this is how I did it:
+
+Download the hallmark dataset from MSigDB. Select 'entrez gene ids' of the hallmark gene sets
+http://software.broadinstitute.org/gsea/msigdb/collections.jsp
+Find where the clusterProfiler package is stored with `find.package("clusterProfiler")`
+eg. mine is "/Library/Frameworks/R.framework/Versions/3.5/Resources/library/clusterProfiler"
+Move the .gmt file to the extdata folder in clusterProfiler
+eg. "/Library/Frameworks/R.framework/Versions/3.5/Resources/library/clusterProfiler/extdata/"
 
 ```{r}
 gmtfile <- system.file("extdata", "h.all.v6.1.entrez.gmt", package="clusterProfiler")
@@ -52,7 +61,7 @@ hallmark <- read.gmt(gmtfile)
 ```{r}
 find_GO <- function(genes, out, ontology="BP"){
   
-  go=paste("results/GO/",out,"_GO.csv")
+  go=paste("../results/functional/GO/",out,"_GO.csv", sep="")
   
   GO_genes <- na.omit(genes[,'ens_gene_p'])
   Interest <- as.character(GO_genes)
@@ -83,11 +92,11 @@ ClusterProfiler function
 ```{r}
 cp <- function(genes, out, samples=c("pro+TNF","gran+TNF")){
   
-  outkegg=paste("results/kegg/",out,"_kegg.csv",sep="")
-  outenrich=paste("results/enrichr/",out,"_hall.csv",sep="")
-  outenrichgenes=paste("results/enrichr_genes/",out,"_hall_genes.csv",sep="")
-  plothall=paste("results/plot_enrich/",out,"_hall.pdf",sep="")
-  plothallgenes=paste("results/plot_enrich_genes/",out,"_hall_genes.pdf",sep="")
+  outkegg=paste("../results/functional/kegg/",out,"_kegg.csv",sep="")
+  outenrich=paste("../results/functional/enrichr/",out,"_hall.csv",sep="")
+  outenrichgenes=paste("../results/functional/enrichr_genes/",out,"_hall_genes.csv",sep="")
+  plothall=paste("../results/functional/plot_enrich/",out,"_hall.pdf",sep="")
+  plothallgenes=paste("../results/functional/plot_enrich_genes/",out,"_hall_genes.pdf",sep="")
   
   #get entrez
   entrez <- bitr(genes[,'ens_gene_p'], fromType = "ENSEMBL",
@@ -153,7 +162,7 @@ go_cluster <- function(genes, out, samples=c("pro+TNF","gran+TNF")){
 Conserved - same direction
 
 ```{r}
-pro_gran_same <- all[all$padj_p<0.05 & all$padj_g<0.05 & ((all$log2FoldChange_p>0 & all$log2FoldChange_g>0) | (all$log2FoldChange_p<0 & all$log2FoldChange_g<0)),]
+pro_gran_same <- na.omit(all[all$padj_p<0.05 & all$padj_g<0.05 & ((all$log2FoldChange_p>0 & all$log2FoldChange_g>0) | (all$log2FoldChange_p<0 & all$log2FoldChange_g<0)),])
 
 go_cluster(pro_gran_same, "pro_gran_conserved")
 ```
@@ -169,7 +178,7 @@ go_cluster(pro_gran_opp,"pro_gran_opp")
 Pro not Gran
 
 ```{r}
-pro_not_gran <- na.omit(all[all$padj_g>0.05 & all$padj_p<0.05,])
+pro_not_gran <- na.omit(all[!(all$padj_g<0.05) & all$padj_p<0.05,])
 
 go_cluster(pro_not_gran,"pro_not_gran")
 ```
@@ -177,7 +186,7 @@ go_cluster(pro_not_gran,"pro_not_gran")
 Gran not Pro
 
 ```{r}
-gran_not_pro <- na.omit(all[all$padj_g<0.05 & all$padj_p>0.05,])
+gran_not_pro <- na.omit(all[all$padj_g<0.05 & all$padj_p>=0.05,])
 
 go_cluster(gran_not_pro,"gran_not_pro")
 ```

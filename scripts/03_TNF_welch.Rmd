@@ -118,10 +118,10 @@ ggsave("../results/volcano_gran_TNF.pdf", useDingbats=FALSE)
 
 ```{r}
 venrbl <- NULL
-venrbl$pro <- as.character(pro_sig$ens_gene)
-venrbl$gran <- as.character(gran_sig$ens_gene)
-venrbl$ra <- as.character(RA_sig$ens_gene)
-venrbl$tpa <- as.character(TPA_sig$ens_gene)
+venrbl$pro <- as.character(all$ens_gene_p[all$padj_p<0.05])
+venrbl$gran <- as.character(all$ens_gene_p[all$padj_g<0.05])
+venrbl$ra <- as.character(all$ens_gene_p[all$padj_r<0.05])
+venrbl$tpa <- as.character(all$ens_gene_p[all$padj_t<0.05])
 str(venrbl)
 
 V_TNF <- Venn(venrbl)
@@ -133,8 +133,8 @@ HL60 + TNF vs HL60-RA + TNF
 
 ```{r}
 ven_pro_gran <- NULL
-ven_pro_gran$pro <- as.character(pro_sig$ens_gene)
-ven_pro_gran$gran <- as.character(gran_sig$ens_gene)
+ven_pro_gran$pro <- unique(as.character(all$ens_gene_p[all$padj_p<0.05]))
+ven_pro_gran$gran <- unique(as.character(all$ens_gene_p[all$padj_g<0.05]))
 
 V_pro_gran <- Venn(ven_pro_gran)
 pdf("../results/Venn_pro_gran.pdf")
@@ -146,9 +146,10 @@ HL60 + TNF vs RA vs TPA - TNF1
 
 ```{r}
 ven_pro <- NULL
-ven_pro$pro <- as.character(pro_sig$ens_gene)
-ven_pro$ra <- as.character(RA_sig$ens_gene)
-ven_pro$tpa <- as.character(TPA_sig$ens_gene)
+ven_pro$pro <- as.character(all$ens_gene_p[all$padj_p<0.05])
+ven_pro$ra <- as.character(all$ens_gene_p[all$padj_r<0.05])
+ven_pro$tpa <- as.character(all$ens_gene_p[all$padj_t<0.05])
+
 
 V_pro <- Venn(ven_pro)
 V_pro
