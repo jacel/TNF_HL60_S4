@@ -1,0 +1,208 @@
+---
+title: "TNF_DESeq2_analysis"
+author: "Elsie Jacobson"
+date: "2/28/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(DESeq2)
+library(vsn)
+library(gplots)
+library(scales)
+library(pheatmap)
+library(RColorBrewer)
+
+ggformat <- theme_classic(base_family = "Arial") + theme(text = element_text(size = 20))
+```
+
+https://bioconductor.org/packages/3.7/bioc/vignettes/DESeq2/inst/doc/DESeq2.html#countmat
+
+```{r}
+dat <- read.table('../data/TNF_genes.txt', header=TRUE, row.names = 1)
+
+ext_name <- readRDS('../data/biomart_gene_ontology.rds')
+
+ext_name <- ext_name %>%
+  dplyr::select(ensembl_gene_id, external_gene_name) %>%
+  distinct()
+```
+
+###HL60 +/- TNF
+
+```{r}
+raw_counts <- dat[,c(12:17)]
+
+groups <- data.frame(factor(c("Pro","Pro","Pro","Pro.TNF","Pro.TNF","Pro.TNF")))
+rownames(groups) <- colnames(raw_counts)
+colnames(groups) <- "condition"
+
+dds <- DESeqDataSetFromMatrix(countData = raw_counts,
+                              colData = groups,
+                              design = ~ condition)
+dds
+
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep,]
+
+dds$condition <- relevel(dds$condition, ref = "Pro")
+
+dds <- DESeq(dds)
+res <- results(dds)
+res <- data.frame(res)
+```
+
+QC
+
+```{r}
+ggplot(res[is.na(res$padj)==FALSE,], aes(log(baseMean), log2FoldChange, colour=padj<0.05)) + geom_point()
+
+vsd <- vst(dds, blind=FALSE)
+meanSdPlot(assay(vsd))
+
+sampleDists <- dist(t(assay(vsd)))
+sampleDistMatrix <- as.matrix(sampleDists)
+rownames(sampleDistMatrix) <- paste(vsd$condition, sep="-")
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDists,
+         clustering_distance_cols=sampleDists,
+         col=colors)
+
+plotPCA(vsd, intgroup=c("condition")) + ggformat + labs(colour="") + scale_colour_viridis_d(end=0.8)
+ggsave("../results/PCA_Pro.pdf", useDingbats=FALSE)
+```
+
+```{r}
+res$gene <- rownames(res)
+hl60 <- res %>%
+  na.omit() %>%
+  mutate(ens_gene=gsub("\\..*$","",gene)) %>%
+  left_join(ext_name, by=c("ens_gene"="ensembl_gene_id"))
+
+hl60_sig <- hl60 %>%
+  filter(padj<0.05)
+
+write.csv(hl60, '../results/Pro_TNF_all.csv')
+write.csv(hl60_sig, '../results/Pro_TNF_sig.csv')
+```
+
+###ATRA-HL60 +/- TNF
+
+```{r}
+raw_counts <- dat[,c(6:11)]
+
+groups <- data.frame(factor(c("Gran","Gran","Gran","Gran.TNF","Gran.TNF","Gran.TNF")))
+rownames(groups) <- colnames(raw_counts)
+colnames(groups) <- "condition"
+
+dds <- DESeqDataSetFromMatrix(countData = raw_counts,
+                              colData = groups,
+                              design = ~ condition)
+dds
+
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep,]
+
+dds$condition <- relevel(dds$condition, ref = "Gran")
+
+dds <- DESeq(dds)
+res <- results(dds)
+res <- data.frame(res)
+```
+
+QC
+
+```{r}
+ggplot(res[is.na(res$padj)==FALSE,], aes(log(baseMean), log2FoldChange, colour=padj<0.05)) + geom_point()
+
+vsd <- vst(dds, blind=FALSE)
+meanSdPlot(assay(vsd))
+
+sampleDists <- dist(t(assay(vsd)))
+sampleDistMatrix <- as.matrix(sampleDists)
+rownames(sampleDistMatrix) <- paste(vsd$condition, sep="-")
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDists,
+         clustering_distance_cols=sampleDists,
+         col=colors)
+
+plotPCA(vsd, intgroup=c("condition")) + ggformat + labs(colour="") + scale_colour_viridis_d(end=0.8)
+ggsave("../results/PCA_Gran.pdf", useDingbats=FALSE)
+```
+
+```{r}
+res$gene <- rownames(res)
+atra <- res %>%
+  na.omit() %>%
+  mutate(ens_gene=gsub("\\..*$","",gene)) %>%
+  left_join(ext_name, by=c("ens_gene"="ensembl_gene_id"))
+
+atra_sig <- atra %>%
+  filter(padj<0.05)
+
+write.csv(atra, '../results/Gran_TNF_all.csv')
+write.csv(atra_sig, '../results/Gran_TNF_sig.csv')
+```
+
+###HL60 +/- ATRA +/- TNF
+
+```{r}
+raw_counts <- dat[,c(6:17)]
+
+groups <- data.frame(factor(c("Gran","Gran","Gran","Gran.TNF","Gran.TNF","Gran.TNF","Pro","Pro","Pro","Pro.TNF","Pro.TNF","Pro.TNF")))
+rownames(groups) <- colnames(raw_counts)
+colnames(groups) <- "condition"
+
+dds <- DESeqDataSetFromMatrix(countData = raw_counts,
+                              colData = groups,
+                              design = ~ condition)
+dds
+
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep,]
+
+keep2 <- rowSums(counts(dds)>1 )>5
+dds <- dds[keep2,]
+
+dds$condition <- relevel(dds$condition, ref = "Pro")
+
+dds <- DESeq(dds)
+res <- results(dds)
+res <- data.frame(res)
+```
+
+#Get variance stabilised count table
+
+```{r}
+vst <- varianceStabilizingTransformation(dds, blind = TRUE,
+  fitType = "parametric")
+
+tbl <- assay(vst)
+
+write.csv(tbl, '../results/TNF_vst_counts.csv')
+```
+
+QC
+
+```{r}
+vsd <- vst(dds, blind=FALSE)
+
+sampleDists <- dist(t(assay(vsd)))
+sampleDistMatrix <- as.matrix(sampleDists)
+rownames(sampleDistMatrix) <- paste(vsd$condition, sep="-")
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDists,
+         clustering_distance_cols=sampleDists,
+         col=colors)
+
+plotPCA(vsd, intgroup=c("condition")) + ggformat + labs(colour="") + scale_colour_viridis_d(option="C", end=0.8)
+ggsave("../results/PCA_TNF.pdf", useDingbats=FALSE)
+```

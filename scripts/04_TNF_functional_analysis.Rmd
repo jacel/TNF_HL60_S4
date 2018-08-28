@@ -1,0 +1,201 @@
+---
+title: "TNF_functional_analysis"
+author: "Elsie Jacobson"
+date: "8/24/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(Vennerable)
+library(extrafont)
+library(topGO)
+library(org.Hs.eg.db)
+library(GSEABase)
+library(clusterProfiler)
+
+ggformat <- theme_classic(base_family = "Arial") + theme(text = element_text(size = 20))
+```
+
+```{r}
+all <- read.csv("HL60_ATRA_TNF_all.csv")
+long <- read.csv("TNF_diff_longform.csv")
+
+TNF1 <- read.csv("TNF_response_level1.csv")
+TNF2 <- read.csv("TNF_response_level2.csv")
+```
+
+```{r}
+tnf_genes <- read.csv("gene_universe_tnf.csv")
+g2o_full <- readRDS('../biomart_gene_ontology.rds')
+g2o <- g2o_full %>%
+  filter(go_id != "") %>%
+  filter(ensembl_gene_id %in% tnf_genes$x)
+geneID2GO <- by(g2o$go_id,
+                g2o$ensembl_gene_id,
+                function(x) as.character(x))
+geneUniverse <- names(geneID2GO)
+```
+
+```{r}
+gmtfile <- system.file("extdata", "h.all.v6.1.entrez.gmt", package="clusterProfiler")
+hallmark <- read.gmt(gmtfile)
+```
+
+###Gene ontology function
+
+```{r}
+find_GO <- function(genes, out, ontology="BP"){
+  
+  go=paste("results/GO/",out,"_GO.csv")
+  
+  GO_genes <- na.omit(genes[,'ens_gene_p'])
+  Interest <- as.character(GO_genes)
+  List <- factor(as.integer(geneUniverse %in% GO_genes))
+  names(List) <- geneUniverse
+
+  GO <- new("topGOdata", description="", ontology=ontology, allGenes=List,  annot = annFUN.gene2GO, gene2GO = geneID2GO)
+
+  allGO = usedGO(object = GO)
+
+  Fisher.w01 <- runTest(GO, algorithm="weight01", statistic="fisher")
+
+  Res <- GenTable(GO, weight01Fisher = Fisher.w01, orderBy = "weight01Fisher", ranksOf = "weight01Fisher", topNodes = length(allGO))
+
+  sigRes <- Res %>%
+  mutate(weight01Fisher=as.numeric(weight01Fisher)) %>%
+  filter(weight01Fisher<1) %>%
+  filter(Significant>1) %>%
+  mutate(qval=p.adjust(weight01Fisher, method="BH")) %>%
+  filter(qval<0.05)
+  write.csv(sigRes, go)
+}
+
+```
+
+ClusterProfiler function
+
+```{r}
+cp <- function(genes, out, samples=c("pro+TNF","gran+TNF")){
+  
+  outkegg=paste("results/kegg/",out,"_kegg.csv",sep="")
+  outenrich=paste("results/enrichr/",out,"_hall.csv",sep="")
+  outenrichgenes=paste("results/enrichr_genes/",out,"_hall_genes.csv",sep="")
+  plothall=paste("results/plot_enrich/",out,"_hall.pdf",sep="")
+  plothallgenes=paste("results/plot_enrich_genes/",out,"_hall_genes.pdf",sep="")
+  
+  #get entrez
+  entrez <- bitr(genes[,'ens_gene_p'], fromType = "ENSEMBL",
+        toType = "ENTREZID",
+        OrgDb = org.Hs.eg.db)
+
+  #get kegg
+  kegg <- enrichKEGG(gene = entrez$ENTREZID,
+                 organism     = 'hsa',
+                 pvalueCutoff = 0.05)
+  kegg_sig <- kegg@result[kegg@result$p.adjust<0.05,]
+  write.csv(kegg_sig,outkegg)
+  
+  #get hallmark
+  
+  hall <- enricher(entrez$ENTREZID, TERM2GENE=hallmark)
+  hall_plot <- hall[,c('ID','GeneRatio','BgRatio','p.adjust','geneID','Count')]
+  write.csv(hall_plot,outenrich)
+  
+  hall_plot <- hall_plot %>%
+    mutate(id=gsub("HALLMARK_","",ID)) %>%
+    separate(BgRatio, by='/', into=c('class','total')) %>%
+    mutate(Group=as.integer(class)) %>%
+    mutate(ratio=Count/Group)
+  ggplot(hall_plot, aes(id, ratio, colour=p.adjust)) + geom_point(size=3) + theme_bw(base_family = "Arial") + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))
+ggsave(plothall,useDingbats=FALSE)
+
+  #plot genes in hallmark categories
+
+  hall_genes <- entrez %>%
+    left_join(hallmark, by=c("ENTREZID"="gene")) %>%
+    filter(ont %in% hall_plot$ID)
+
+  hall_annot <- genes %>%
+    inner_join(hall_genes, by=c("ens_gene_p"="ENSEMBL")) %>%
+    dplyr::select(external_gene_name_p,ont)
+
+  hall_annot_tidy <- long %>%
+    inner_join(hall_annot, by=c("external_gene_name"="external_gene_name_p")) %>%
+    filter(sample %in% samples, sig=="sig", is.na(ont)==FALSE) %>%
+    dplyr::select(external_gene_name,sample,sig,log2FoldChange,ens_gene,ont) %>%
+    na.omit() %>%
+    distinct() %>%
+    arrange(ont)
+
+  write.csv(hall_annot_tidy, outenrichgenes)
+
+  ggplot(hall_annot_tidy, aes(external_gene_name, log2FoldChange, fill=sample)) +       geom_bar(stat='identity', position='dodge') + scale_fill_viridis_d() + facet_wrap(~ont, scales = "free_x") + theme_bw() + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) 
+
+  ggsave(plothallgenes, height=25, width=25)
+}
+```
+
+```{r}
+go_cluster <- function(genes, out, samples=c("pro+TNF","gran+TNF")){
+  find_GO(genes, out)
+  cp(genes, out, samples)
+}
+```
+
+##Pro+TNF vs Gran+TNF
+
+Conserved - same direction
+
+```{r}
+pro_gran_same <- all[all$padj_p<0.05 & all$padj_g<0.05 & ((all$log2FoldChange_p>0 & all$log2FoldChange_g>0) | (all$log2FoldChange_p<0 & all$log2FoldChange_g<0)),]
+
+go_cluster(pro_gran_same, "pro_gran_conserved")
+```
+
+Opposite direction
+
+```{r}
+pro_gran_opp <- na.omit(all[all$padj_g<0.05 & all$padj_p<0.05 & ((all$log2FoldChange_g<0 & all$log2FoldChange_p>0) | (all$log2FoldChange_p<0 & all$log2FoldChange_g>0)),])
+
+go_cluster(pro_gran_opp,"pro_gran_opp")
+```
+
+Pro not Gran
+
+```{r}
+pro_not_gran <- na.omit(all[all$padj_g>0.05 & all$padj_p<0.05,])
+
+go_cluster(pro_not_gran,"pro_not_gran")
+```
+
+Gran not Pro
+
+```{r}
+gran_not_pro <- na.omit(all[all$padj_g<0.05 & all$padj_p>0.05,])
+
+go_cluster(gran_not_pro,"gran_not_pro")
+```
+
+##Include welch diff data
+
+Differentiation conserved - same direction
+
+```{r}
+diff_same <- all[all$padj_r<0.05 & all$padj_t<0.05 & ((all$log2FoldChange_r>0 & all$log2FoldChange_t>0) | (all$log2FoldChange_r<0 & all$log2FoldChange_t<0)),]
+
+go_cluster(diff_same, "diff_conserved")
+```
+
+```{r}
+go_cluster(TNF1,"TNF1")
+```
+
+```{r}
+go_cluster(TNF2,"TNF2")
+```

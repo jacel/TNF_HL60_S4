@@ -1,0 +1,269 @@
+---
+title: "TNF_welch"
+author: "Elsie Jacobson"
+date: "8/8/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(Vennerable)
+library(gplots)
+library(scales)
+library(ggrepel)
+library(extrafont)
+
+ggformat <- theme_classic(base_family = "Arial") + theme(text = element_text(size = 20))
+```
+
+```{r}
+pro_all <- read.csv("../results/Pro_TNF_all.csv", row.names=1)
+pro_sig <- read.csv("../results/Pro_TNF_sig.csv", row.names=1)
+gran_all <- read.csv("../results/Gran_TNF_all.csv", row.names=1)
+gran_sig <- read.csv("../results/Gran_TNF_sig.csv", row.names=1)
+
+TPA_all <- read.csv("../results/tpa_all.csv", row.names=1)
+TPA_sig <- read.csv("../results/tpa_sig.csv", row.names=1)
+RA_all <- read.csv("../results/atra_all.csv", row.names=1)
+RA_sig <- read.csv("../results/atra_sig.csv", row.names=1)
+```
+
+Make long form dataset of DGE
+
+```{r}
+all_long <- pro_all %>%
+  mutate(sample="pro+TNF") %>%
+  bind_rows(gran_all) %>%
+  mutate(sample=case_when(is.na(sample)==TRUE~"gran+TNF", TRUE~sample)) %>%
+  bind_rows(RA_all) %>%
+  mutate(sample=case_when(is.na(sample)==TRUE~"pro+ATRA", TRUE~sample)) %>%
+  bind_rows(TPA_all) %>%
+  mutate(sample=case_when(is.na(sample)==TRUE~"pro+TPA", TRUE~sample)) %>%
+  distinct() %>%
+  mutate(sig=case_when(padj<0.05~"sig",TRUE~"NS")) %>%
+  mutate(change=case_when(abs(log2FoldChange)>2~"log2FC>2",
+                          abs(log2FoldChange)>1~"log2FC>1",
+                          TRUE~"log2FC<=1"))
+write.csv(all_long, "../results/TNF_diff_longform.csv")
+```
+
+Compile dataset of DGE in both comparisons
+
+```{r}
+p <- paste(colnames(pro_all), "p",sep="_")
+g <- paste(colnames(gran_all), "g",sep="_")
+r <- paste(colnames(RA_all), "r",sep="_")
+t <- paste(colnames(TPA_all), "t",sep="_")
+
+colnames(pro_all) <- p
+colnames(gran_all) <- g
+colnames(RA_all) <- r
+colnames(TPA_all) <- t
+
+all <- pro_all %>%
+  full_join(gran_all, by=c("ens_gene_p"="ens_gene_g")) %>%
+  full_join(RA_all, by=c("ens_gene_p"="ens_gene_r")) %>%
+  full_join(TPA_all, by=c("ens_gene_p"="ens_gene_t")) %>%
+  distinct()
+
+all_sig <- all %>%
+  mutate(sig_p=ifelse(padj_p<0.05,"p_sig","p_NS")) %>%
+  mutate(sig_g=ifelse(padj_g<0.05,"g_sig","g_NS")) %>%
+  mutate(sig_r=ifelse(padj_r<0.05,"r_sig","r_NS")) %>%
+  mutate(sig_t=ifelse(padj_t<0.05,"t_sig","t_NS")) %>%
+  filter(sig_p=="p_sig" | sig_g=="g_sig" | sig_r=="r_sig" | sig_t=="t_sig") %>%
+  na.omit() %>%
+  distinct()
+
+write.csv(all, "../results/HL60_ATRA_TPA_TNF_all.csv")
+
+universe <- all$ens_gene_p
+write.csv(universe, "../results/gene_universe_tnf.csv", row.names = FALSE)
+```
+
+```{r}
+summary_FC <- all_long %>%
+  group_by(sample) %>%
+  filter(padj<0.05) %>%
+  summarise(mean=mean(log2FoldChange),median=median(log2FoldChange),sd=sd(log2FoldChange),
+            min=min(log2FoldChange),max=max(log2FoldChange),p_25=quantile(log2FoldChange, probs=0.25),
+            p_75=quantile(log2FoldChange, probs=0.75))
+```
+
+Volcano plots
+
+```{r}
+ggplot(all_long, aes(log2FoldChange, -log(padj), colour=padj<0.05)) + geom_point(alpha=0.5) + facet_wrap(~sample) + ggformat + scale_colour_viridis_d(option="B", begin=0.2, end=0.8) + labs(colour="DE")
+ggsave("../results/all_volcanoes.pdf", useDingbats=FALSE)
+```
+
+```{r}
+table(pro_sig$log2FoldChange>0)
+prop.test(c(980,1312),c(2292,2292))
+
+ggplot(pro_all, aes(log2FoldChange_p, -log(padj_p), colour=padj_p<0.05, label=external_gene_name_p)) + geom_point(alpha=0.5, size=1) + scale_colour_manual(values=c("black","#cc2a2a")) + ggformat + labs(x="log2 Fold Change pro +/- TNF", y="-log adjusted p value", colour="Significant")
+ggsave("../results/volcano_pro_TNF.pdf", useDingbats=FALSE)
+```
+
+```{r}
+table(gran_sig$log2FoldChange>0)
+prop.test(c(3597,3809),c(7406,7406))
+
+ggplot(gran_all, aes(log2FoldChange_g, -log(padj_g), colour=padj_g<0.05, label=external_gene_name_g)) + geom_point(alpha=0.5) + scale_colour_manual(values=c("black","#cc2a2a")) + ggformat  + labs(x="log2 Fold Change gran +/- TNF", y="-log adjusted p value", colour="Significant")
+ggsave("../results/volcano_gran_TNF.pdf", useDingbats=FALSE)
+```
+
+###Venn diagram of the intersects
+
+```{r}
+venrbl <- NULL
+venrbl$pro <- as.character(pro_sig$ens_gene)
+venrbl$gran <- as.character(gran_sig$ens_gene)
+venrbl$ra <- as.character(RA_sig$ens_gene)
+venrbl$tpa <- as.character(TPA_sig$ens_gene)
+str(venrbl)
+
+V_TNF <- Venn(venrbl)
+V_TNF
+plot(V_TNF, type="ellipses")
+```
+
+HL60 + TNF vs HL60-RA + TNF
+
+```{r}
+ven_pro_gran <- NULL
+ven_pro_gran$pro <- as.character(pro_sig$ens_gene)
+ven_pro_gran$gran <- as.character(gran_sig$ens_gene)
+
+V_pro_gran <- Venn(ven_pro_gran)
+pdf("../results/Venn_pro_gran.pdf")
+plot(V_pro_gran, show=list(Faces=FALSE,DarkMatter=FALSE))
+dev.off()
+```
+
+HL60 + TNF vs RA vs TPA - TNF1
+
+```{r}
+ven_pro <- NULL
+ven_pro$pro <- as.character(pro_sig$ens_gene)
+ven_pro$ra <- as.character(RA_sig$ens_gene)
+ven_pro$tpa <- as.character(TPA_sig$ens_gene)
+
+V_pro <- Venn(ven_pro)
+V_pro
+pdf("../results/Venn_pro.pdf")
+plot(V_pro, show=list(Faces=FALSE,DarkMatter=FALSE))
+dev.off()
+```
+
+HL60-RA + TNF vs RA vs TPA
+
+```{r}
+ven_gran <- NULL
+ven_gran$gran <- as.character(gran_sig$ens_gene)
+ven_gran$ra <- as.character(RA_sig$ens_gene)
+ven_gran$tpa <- as.character(TPA_sig$ens_gene)
+
+V_gran <- Venn(ven_gran)
+V_gran
+pdf("../results/Venn_gran.pdf")
+plot(V_gran, show=list(Faces=FALSE,DarkMatter=FALSE))
+dev.off()
+```
+
+```{r}
+#pro 331/2292 not in diff
+#gran 1555/7406 not in diff
+
+prop.test(c(331,1555),c(2292,7406))
+```
+
+Pro+TNF vs RA
+
+```{r}
+pro_ra <- subset(all_sig,sig_r=="r_sig" & sig_p=="p_sig")
+
+summary(lm(log2FoldChange_p~log2FoldChange_r, data=pro_ra))
+
+ggplot(pro_ra, aes(log2FoldChange_r, log2FoldChange_p)) + geom_point(alpha=0.5) + ggformat + geom_hline(yintercept=0) + geom_vline(xintercept = 0) + geom_smooth(method="lm")
+ggsave("../results/pro_vs_RA_log2FC.pdf")
+```
+
+Gran+TNF vs RA
+
+```{r}
+gran_ra <- subset(all_sig,sig_r=="r_sig" & sig_g=="g_sig")
+
+summary(lm(log2FoldChange_g~log2FoldChange_r, data=gran_ra))
+
+ggplot(gran_ra, aes(log2FoldChange_r, log2FoldChange_g)) + geom_point(alpha=0.5) + ggformat + geom_hline(yintercept=0) + geom_vline(xintercept = 0) + geom_smooth(method="lm")
+ggsave("../results/gran_vs_RA_log2FC.pdf")
+```
+
+Pro+TNF vs TPA
+
+```{r}
+pro_tpa <- subset(all_sig,sig_t=="t_sig" & sig_p=="p_sig")
+
+summary(lm(log2FoldChange_p~log2FoldChange_t, data=pro_tpa))
+
+ggplot(pro_tpa, aes(log2FoldChange_t, log2FoldChange_p)) + geom_point(alpha=0.5) + ggformat + geom_hline(yintercept=0) + geom_vline(xintercept = 0) + geom_smooth(method="lm")
+ggsave("../results/pro_vs_TPA_log2FC.pdf")
+```
+
+Gran+TNF vs TPA
+
+```{r}
+gran_tpa <- subset(all_sig,sig_t=="t_sig" & sig_g=="g_sig")
+
+summary(lm(log2FoldChange_g~log2FoldChange_t, data=gran_tpa))
+
+ggplot(gran_tpa, aes(log2FoldChange_t, log2FoldChange_g)) + geom_point(alpha=0.5) + ggformat + geom_hline(yintercept=0) + geom_vline(xintercept = 0) + geom_smooth(method="lm")
+ggsave("../results/gran_vs_TPA_log2FC.pdf")
+```
+
+TNF level 1 - pro+TNF, ATRA, TPA
+
+```{r}
+TNF1 <- all_sig %>%
+  mutate(allsig=case_when(sig_t=="t_sig" & sig_p=="p_sig" & sig_r=="r_sig"~"allsig",
+                          TRUE~"NS")) %>%
+  mutate(allup=case_when(log2FoldChange_t>0 & log2FoldChange_p>0 & log2FoldChange_r>0 ~"up",TRUE~"not_up")) %>%
+  mutate(alldown=case_when(log2FoldChange_t<0  & log2FoldChange_p<0 & log2FoldChange_r<0 ~"down",TRUE~"not_down")) %>%
+  mutate(same_dir=case_when(allup=="up" | alldown=="down"~"same",TRUE~"diff")) %>%
+  filter(allsig=="allsig", same_dir=="same") %>%
+  distinct()
+
+write.csv(TNF1, "../results/TNF_response_level1.csv")
+```
+
+TNF level 2 - gran+TNF, TPA excluding TNF1
+
+```{r}
+TNF2 <- all_sig %>%
+  mutate(allsig=case_when(sig_t=="t_sig" & sig_g=="g_sig"~"allsig", TRUE~"NS")) %>%
+  mutate(allup=case_when(log2FoldChange_t>0 & log2FoldChange_g>0 ~"up",TRUE~"not_up")) %>%
+  mutate(alldown=case_when(log2FoldChange_t<0 & log2FoldChange_g<0 ~"down",TRUE~"not_down")) %>%
+  mutate(same_dir=case_when(allup=="up" | alldown=="down"~"same",TRUE~"diff")) %>%
+  filter(allsig=="allsig", same_dir=="same", !(ens_gene_p %in% TNF1$ens_gene_p)) %>%
+  distinct()
+
+write.csv(TNF2, "../results/TNF_response_level2.csv")
+```
+
+prop test - TNF1 genes
+
+```{r}
+#pro vs ra
+prop.test(c(660,660),c(2292,11255))
+#ra vs tpa
+prop.test(c(660,660),c(11255,13177))
+```
+
+prop test - TNF2 genes
+
+```{r}
+#gran vs tpa
+prop.test(c(2090,2090),c(7406,13177))
+```
