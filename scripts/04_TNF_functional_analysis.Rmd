@@ -18,11 +18,20 @@ library(topGO)
 library(org.Hs.eg.db)
 library(GSEABase)
 library(clusterProfiler)
+library(viridisLite)
 
 ggformat <- theme_classic(base_family = "Arial") + theme(text = element_text(size = 20))
+
+col1 <- viridis(2, begin=0.3, end=0.7, option="D")
+col2 <- viridis(2, begin=0.3, end=0.7, option="B")
+cols <- c(col1,col2)
 ```
 
 ```{r}
+pro_all <- read.csv('../results/Pro_TNF_all.csv')
+gran_all <- read.csv('../results/Gran_TNF_all.csv')
+ra_all <- read.csv('../results/atra_all.csv')
+tpa_all <- read.csv('../results/tpa_all.csv')
 all <- read.csv("../results/HL60_ATRA_TPA_TNF_all.csv")
 long <- read.csv("../results/TNF_diff_longform.csv")
 
@@ -121,7 +130,7 @@ cp <- function(genes, out, samples=c("pro+TNF","gran+TNF")){
     separate(BgRatio, by='/', into=c('class','total')) %>%
     mutate(Group=as.integer(class)) %>%
     mutate(ratio=Count/Group)
-  ggplot(hall_plot, aes(id, ratio, colour=p.adjust)) + geom_point(size=3) + theme_bw(base_family = "Arial") + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))
+  ggplot(hall_plot, aes(id, ratio, colour=p.adjust)) + geom_point(size=3) + theme_bw(base_family = "Arial") + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) + theme(text = element_text(size = 20))
 ggsave(plothall,useDingbats=FALSE)
 
   #plot genes in hallmark categories
@@ -144,7 +153,7 @@ ggsave(plothall,useDingbats=FALSE)
 
   write.csv(hall_annot_tidy, outenrichgenes)
 
-  ggplot(hall_annot_tidy, aes(external_gene_name, log2FoldChange, fill=sample)) +       geom_bar(stat='identity', position='dodge') + scale_fill_viridis_d() + facet_wrap(~ont, scales = "free_x") + theme_bw() + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) 
+  ggplot(hall_annot_tidy, aes(external_gene_name, log2FoldChange, fill=sample)) + geom_bar(stat='identity', position='dodge') + scale_fill_grey() + facet_wrap(~ont, scales = "free_x") + theme_bw(base_family = "Arial") + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) + theme(text = element_text(size = 20))
 
   ggsave(plothallgenes, height=25, width=25)
 }
@@ -173,6 +182,24 @@ Opposite direction
 pro_gran_opp <- na.omit(all[all$padj_g<0.05 & all$padj_p<0.05 & ((all$log2FoldChange_g<0 & all$log2FoldChange_p>0) | (all$log2FoldChange_p<0 & all$log2FoldChange_g>0)),])
 
 go_cluster(pro_gran_opp,"pro_gran_opp")
+
+cp(pro_gran_opp,"pro_gran_opp")
+```
+
+```{r}
+pro_gran_opp_hall_genes <- read.csv("../results/functional/enrichr_genes/pro_gran_opp_hall_genes.csv")
+pro_gran_opp_tnf <- pro_gran_opp_hall_genes %>%
+  dplyr::select(ens_gene, ont) %>%
+  mutate(Gene_Set=gsub("HALLMARK_","",ont)) %>%
+  left_join(long, by="ens_gene") %>%
+  filter(sample %in% c("pro+TNF","gran+TNF")) %>%
+  mutate(Condition=case_when(sample=="pro+TNF"~"TNF",sample=="gran+TNF"~"ATRA+TNF")) %>%
+  mutate(Condition=factor(Condition, levels=c("TNF","ATRA+TNF"))) %>%
+  mutate(ont=factor(ont, levels=c("G2M_CHECKPOINT","E2F_TARGETS"))) %>%
+  mutate(sig=case_when(sig=="sig"~"Yes",sig=="NS"~"No"))
+
+ggplot(subset(pro_gran_opp_tnf, sig=="Yes"), aes(Condition, external_gene_name, fill=log2FoldChange)) + geom_tile() + theme_classic(base_family = "Arial") + theme(text = element_text(size = 15)) + scale_fill_gradient2(low='#b2182b', high='#2166ac', mid="white") + scale_alpha_manual(values=c(0.1,1)) + labs(y="Gene") + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) + facet_grid(Gene_Set~., scales="free")
+ggsave("../results/functional/plot_enrich_genes/pro_gran_opp_hall_TNF_allsig_heatmap.pdf")
 ```
 
 Pro not Gran
@@ -196,9 +223,57 @@ go_cluster(gran_not_pro,"gran_not_pro")
 Differentiation conserved - same direction
 
 ```{r}
-diff_same <- all[all$padj_r<0.05 & all$padj_t<0.05 & ((all$log2FoldChange_r>0 & all$log2FoldChange_t>0) | (all$log2FoldChange_r<0 & all$log2FoldChange_t<0)),]
+diff_same <- na.omit(all[all$padj_r<0.05 & all$padj_t<0.05 & ((all$log2FoldChange_r>0 & all$log2FoldChange_t>0) | (all$log2FoldChange_r<0 & all$log2FoldChange_t<0)),])
 
-go_cluster(diff_same, "diff_conserved")
+go_cluster(diff_same, "diff_conserved", samples=c("pro+ATRA","pro+TPA"))
+```
+
+ATRA not TPA
+
+```{r}
+ra_not_tpa <- na.omit(all[all$padj_r<0.05 & all$padj_t>0.05,])
+
+go_cluster(ra_not_tpa, "ra_not_tpa", samples=c("pro+ATRA","pro+TPA"))
+```
+
+TPA not RA
+
+```{r}
+tpa_not_ra <- na.omit(all[all$padj_r>0.05 & all$padj_t<0.05,])
+
+go_cluster(tpa_not_ra, "tpa_not_ra", samples=c("pro+ATRA","pro+TPA"))
+```
+
+Differentiation opposite direction
+
+```{r}
+diff_opp <- na.omit(all[all$padj_r<0.05 & all$padj_t<0.05 & ((all$log2FoldChange_r>0 & all$log2FoldChange_t<0) | (all$log2FoldChange_r<0 & all$log2FoldChange_t>0)),])
+
+go_cluster(diff_opp, "diff_opp", samples=c("pro+ATRA","pro+TPA"))
+
+diff_opp_hall_genes <- read.csv("../results/functional/enrichr_genes/diff_opp_hall_genes.csv")
+diff_opp_tnf <- diff_opp_hall_genes %>%
+  dplyr::select(ens_gene, ont) %>%
+  mutate(Gene_Set=gsub("HALLMARK_","",ont)) %>%
+  left_join(long, by="ens_gene") %>%
+  mutate(Condition=case_when(sample=="pro+TNF"~"TNF",sample=="gran+TNF"~"ATRA+TNF",sample=="pro+ATRA"~"ATRA",sample=="pro+TPA"~"TPA")) %>%
+  mutate(Condition=factor(Condition, levels=c("TNF","ATRA+TNF","ATRA","TPA"))) %>%
+  mutate(sig=case_when(sig=="sig"~"Yes",sig=="NS"~"No"))
+
+ggplot(diff_opp_tnf, aes(external_gene_name, log2FoldChange, fill=Condition, alpha=sig)) + geom_bar(stat="identity", position="dodge", width=0.75) + scale_fill_manual(values=cols) + scale_alpha_manual(values=c(0.1,1)) + theme_classic() + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) + labs(x="Gene", alpha="P.adjust<0.05") +
+  geom_vline(xintercept=seq(1.5, length(unique(diff_opp_tnf$external_gene_name))-0.5, 1), lwd=0.1, colour="grey")
+ggsave("../results/functional/plot_enrich_genes/diff_opp_hall_TNF_allsig.pdf")
+```
+
+Heatmap
+
+```{r}
+ggplot(subset(diff_opp_tnf, sig=="Yes"), aes(Condition, external_gene_name, fill=log2FoldChange)) + geom_tile() + theme_classic(base_family = "Arial") + theme(text = element_text(size = 11)) + scale_fill_gradient2(low='#b2182b', high='#2166ac', mid="white") + scale_alpha_manual(values=c(0.1,1)) + labs(y="Gene") + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5),panel.background = element_rect(fill = "grey")) + facet_grid(Gene_Set~., scales="free")
+ggsave("../results/functional/plot_enrich_genes/diff_opp_hall_TNF_allsig_heatmap.pdf")
+```
+
+```{r}
+addmargins(table(diff_opp_tnf$log2FoldChange>0, diff_opp_tnf$Condition, diff_opp_tnf$sig))
 ```
 
 ```{r}
@@ -207,4 +282,162 @@ go_cluster(TNF1,"TNF1")
 
 ```{r}
 go_cluster(TNF2,"TNF2")
+```
+
+##GSEA
+
+GSEA pro
+
+```{r}
+pro_e <- bitr(pro_all$ens_gene, fromType = "ENSEMBL",
+        toType = "ENTREZID",
+        OrgDb = org.Hs.eg.db)
+
+pro_ge <- pro_all %>%
+  left_join(pro_e, by=c("ens_gene"='ENSEMBL'))
+
+pro_g <- pro_ge$log2FoldChange
+names(pro_g) <- pro_ge$ENTREZID
+pro_geneList = sort(pro_g, decreasing = TRUE)
+
+pro_GSEA <- GSEA(pro_geneList, TERM2GENE=hallmark, verbose=FALSE)
+#head(pro_GSEA, n=16)
+
+plot_pro_GSEA <- pro_GSEA[,c("ID","setSize","NES","p.adjust","leading_edge")]
+plot_pro_GSEA$condition <- "Pro+TNF"
+```
+
+GSEA gran
+
+```{r}
+gran_e <- bitr(gran_all$ens_gene, fromType = "ENSEMBL",
+        toType = "ENTREZID",
+        OrgDb = org.Hs.eg.db)
+
+gran_ge <- gran_all %>%
+  left_join(gran_e, by=c("ens_gene"='ENSEMBL'))
+
+gran_g <- gran_ge$log2FoldChange
+names(gran_g) <- gran_ge$ENTREZID
+gran_geneList = sort(gran_g, decreasing = TRUE)
+
+gran_GSEA <- GSEA(gran_geneList, TERM2GENE=hallmark, verbose=TRUE)
+#head(gran_GSEA, n=22)
+
+plot_gran_GSEA <- gran_GSEA[,c("ID","setSize","NES","p.adjust","leading_edge")]
+plot_gran_GSEA$condition <- "Gran+TNF"
+```
+
+```{r}
+tnf_GSEA <- plot_pro_GSEA %>%
+  bind_rows(plot_gran_GSEA) %>%
+  mutate(id=gsub("HALLMARK_","",ID)) %>%
+  separate(leading_edge, sep="%, ", into=c("tags","list","signal")) %>%
+  mutate(tags=as.numeric(gsub("tags=","",tags)))%>%
+  mutate(list=as.numeric(gsub("list=","",list))) %>%
+  mutate(signal=gsub("signal=","",signal)) %>%
+  mutate(signal=as.numeric(gsub("%","",signal))) %>%
+  mutate(Condition=factor(condition, levels=c("Pro+TNF","Gran+TNF")))
+
+ggplot(tnf_GSEA, aes(x=reorder(id,-NES),NES,colour=Condition)) + geom_segment(aes(x=reorder(id,-NES),xend=reorder(id,-NES),y=NES,yend=0, colour=Condition),position = position_dodge(width = 0.5)) + geom_point(position = position_dodge(width = 0.5)) +  theme_bw(base_family = "Arial") + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) + scale_colour_manual(values=col1) + labs(x="MSigDB Term", y="Normalized Enrichment Score")
+ggsave("../results/functional/GSEA/TNF_sig_GSEA_signal.pdf", useDingbats=FALSE)
+```
+
+GSEA no lines TNF
+
+```{r}
+ggplot(tnf_GSEA, aes(x=reorder(id,-NES),NES,colour=Condition)) + geom_point(position = position_dodge(width = 0.5)) +  theme_bw(base_family = "Arial") + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) + scale_colour_manual(values=col1) + labs(x="MSigDB Term", y="Normalized Enrichment Score") + geom_hline(yintercept = 0)
+ggsave("../results/functional/GSEA/TNF_sig_GSEA_signal_nolines.pdf", useDingbats=FALSE)
+```
+
+```{r}
+gsea_table <- tnf_GSEA %>%
+  dplyr::select(ID, NES,p.adjust, condition)
+
+write.csv(gsea_table,"../results/functional/GSEA/GSEA_TNF.csv")
+```
+
+Diff GSEA
+
+GSEA RA
+
+```{r}
+ra_e <- bitr(ra_all$ens_gene, fromType = "ENSEMBL",
+        toType = "ENTREZID",
+        OrgDb = org.Hs.eg.db)
+
+ra_ge <- ra_all %>%
+  left_join(ra_e, by=c("ens_gene"='ENSEMBL'))
+
+ra_g <- ra_ge$log2FoldChange
+names(ra_g) <- ra_ge$ENTREZID
+ra_geneList = sort(ra_g, decreasing = TRUE)
+
+ra_GSEA <- GSEA(ra_geneList, TERM2GENE=hallmark, verbose=FALSE)
+#head(ra_GSEA, n=16)
+
+plot_ra_GSEA <- ra_GSEA[,c("ID","setSize","NES","p.adjust","leading_edge")]
+plot_ra_GSEA$condition <- "ATRA"
+```
+
+GSEA TPA
+
+```{r}
+tpa_e <- bitr(tpa_all$ens_gene, fromType = "ENSEMBL",
+        toType = "ENTREZID",
+        OrgDb = org.Hs.eg.db)
+
+tpa_ge <- tpa_all %>%
+  left_join(tpa_e, by=c("ens_gene"='ENSEMBL'))
+
+tpa_g <- tpa_ge$log2FoldChange
+names(tpa_g) <- tpa_ge$ENTREZID
+tpa_geneList = sort(tpa_g, decreasing = TRUE)
+
+tpa_GSEA <- GSEA(tpa_geneList, TERM2GENE=hallmark, verbose=TRUE)
+#head(tpa_GSEA, n=22)
+
+plot_tpa_GSEA <- tpa_GSEA[,c("ID","setSize","NES","p.adjust","leading_edge")]
+plot_tpa_GSEA$condition <- "TPA"
+```
+
+```{r}
+diff_GSEA <- plot_ra_GSEA %>%
+  bind_rows(plot_tpa_GSEA) %>%
+  mutate(id=gsub("HALLMARK_","",ID)) %>%
+  separate(leading_edge, sep="%, ", into=c("tags","list","signal")) %>%
+  mutate(tags=as.numeric(gsub("tags=","",tags)))%>%
+  mutate(list=as.numeric(gsub("list=","",list))) %>%
+  mutate(signal=gsub("signal=","",signal)) %>%
+  mutate(signal=as.numeric(gsub("%","",signal)))
+
+ggplot(diff_GSEA, aes(x=reorder(id,-NES),NES,colour=condition)) + geom_segment(aes(x=reorder(id,-NES),xend=reorder(id,-NES),y=NES,yend=0, colour=condition),position = position_dodge(width = 0.5)) + geom_point(position = position_dodge(width = 0.5)) +  theme_bw(base_family = "Arial") + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) + scale_colour_viridis_d(option="D", begin=0.2, end=0.6) + labs(x="MSigDB Term", y="Normalized Enrichment Score")
+ggsave("../results/functional/GSEA/diff_sig_GSEA_signal.pdf", useDingbats=FALSE)
+```
+
+```{r}
+gsea_diff <- diff_GSEA %>%
+  dplyr::select(ID, NES,p.adjust, condition)
+
+write.csv(gsea_diff,"../results/functional/GSEA/GSEA_diff.csv")
+```
+
+```{r}
+all_GSEA <- tnf_GSEA %>%
+  bind_rows(diff_GSEA) %>%
+  mutate(Condition=factor(condition, levels=c("Pro+TNF","Gran+TNF","ATRA","TPA")))
+
+ggplot(all_GSEA, aes(x=reorder(id,-NES),NES,colour=Condition)) + geom_segment(aes(x=reorder(id,-NES),xend=reorder(id,-NES),y=NES,yend=0, colour=Condition),position = position_dodge(width = 0.5)) + geom_point(position = position_dodge(width = 0.5)) +  theme_bw(base_family = "Arial") + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) + scale_colour_manual(values=cols) + labs(x="MSigDB Term", y="Normalized Enrichment Score")
+ggsave("../results/functional/GSEA/TNF_diff_sig_GSEA_signal.pdf", useDingbats=FALSE)
+
+ggplot(all_GSEA, aes(x=reorder(id,-NES),NES,colour=Condition)) + geom_point() +  theme_bw(base_family = "Arial") + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) + scale_colour_manual(values=cols) + labs(x="MSigDB Term", y="Normalized Enrichment Score") + facet_grid(Condition~.) + geom_hline(yintercept = 0)
+ggsave("../results/functional/GSEA/TNF_diff_sig_GSEA_signal_grid.pdf", useDingbats=FALSE)
+```
+
+```{r}
+sum_GSEA <- all_GSEA %>%
+  group_by(ID) %>%
+  mutate(Direction=case_when(NES>0~"Up",NES<0~"Down")) %>%
+  dplyr::select(ID,Direction,condition) %>%
+  spread(condition, Direction, fill="-")
 ```

@@ -14,6 +14,7 @@ library(gplots)
 library(scales)
 library(pheatmap)
 library(RColorBrewer)
+library(cowplot)
 
 ggformat <- theme_classic(base_family = "Arial") + theme(text = element_text(size = 20))
 ```
@@ -72,7 +73,7 @@ pheatmap(sampleDistMatrix,
          clustering_distance_cols=sampleDists,
          col=colors)
 
-plotPCA(vsd, intgroup=c("condition")) + ggformat + labs(colour="") + scale_colour_viridis_d(end=0.8)
+pro_pca <- plotPCA(vsd, intgroup=c("condition")) + ggformat + labs(colour="") + scale_colour_viridis_d(end=0.8) + coord_fixed(1.5)
 ggsave("../results/PCA_Pro.pdf", useDingbats=FALSE)
 ```
 
@@ -132,8 +133,11 @@ pheatmap(sampleDistMatrix,
          clustering_distance_cols=sampleDists,
          col=colors)
 
-plotPCA(vsd, intgroup=c("condition")) + ggformat + labs(colour="") + scale_colour_viridis_d(end=0.8)
+gran_pca <- plotPCA(vsd, intgroup=c("condition")) + ggformat + labs(colour="") + scale_colour_viridis_d(end=0.8) + coord_fixed(4)
 ggsave("../results/PCA_Gran.pdf", useDingbats=FALSE)
+
+plot_grid(pro_pca, gran_pca, nrow=2, align="v")
+ggsave("../results/PCA_pro_gran.pdf")
 ```
 
 ```{r}

@@ -13,6 +13,7 @@ library(gplots)
 library(scales)
 library(ggrepel)
 library(extrafont)
+library(broom)
 
 ggformat <- theme_classic(base_family = "Arial") + theme(text = element_text(size = 20))
 ```
@@ -74,12 +75,29 @@ all_sig <- all %>%
   mutate(sig_t=ifelse(padj_t<0.05,"t_sig","t_NS")) %>%
   filter(sig_p=="p_sig" | sig_g=="g_sig" | sig_r=="r_sig" | sig_t=="t_sig") %>%
   na.omit() %>%
-  distinct()
+  distinct() %>%
+  dplyr::select(ens_gene=ens_gene_p, external_gene_name=external_gene_name_p, baseMean_proTNF=baseMean_p, log2FoldChange_proTNF=log2FoldChange_p, padj_proTNF=padj_p, baseMean_granTNF=baseMean_g, log2FoldChange_granTNF=log2FoldChange_g, padj_granTNF=padj_g, baseMean_ATRA=baseMean_r, log2FoldChange_ATRA=log2FoldChange_r, padj_ATRA=padj_r, baseMean_TPA=baseMean_t, log2FoldChange_TPA=log2FoldChange_t, padj_TPA=padj_t)
+write.csv(all_sig, "../results/HL60_ATRA_TPA_TNF_sig.csv")
 
 write.csv(all, "../results/HL60_ATRA_TPA_TNF_all.csv")
 
 universe <- all$ens_gene_p
 write.csv(universe, "../results/gene_universe_tnf.csv", row.names = FALSE)
+```
+
+Supp1***************
+
+```{r}
+ supp1 <- all_sig %>%
+  mutate(TNF_Category=case_when(padj_proTNF<0.05 & padj_granTNF>0.05~"Pro-specific TNF",
+                               padj_proTNF>0.05 & padj_granTNF<0.05~"Gran-specific TNF",
+                               padj_proTNF<0.05 & padj_granTNF<0.05 & log2FoldChange_proTNF*log2FoldChange_granTNF>=0~"Conserved TNF",
+                               padj_proTNF<0.05 & padj_granTNF<0.05 & log2FoldChange_proTNF*log2FoldChange_granTNF<0~"Opposite TNF")) %>%
+  mutate(Diff_category=case_when(padj_ATRA<0.05 & padj_TPA>0.05~"ATRA-specific",
+                               padj_ATRA>0.05 & padj_TPA<0.05~"TPA-specific",
+                               padj_ATRA<0.05 & padj_TPA<0.05 & log2FoldChange_ATRA*log2FoldChange_TPA>=0~"Conserved diff",
+                               padj_ATRA<0.05 & padj_TPA<0.05 & log2FoldChange_ATRA*log2FoldChange_TPA<0~"Opposite diff"))
+write.csv(supp1, "../results/Supplementary_table_1.csv")
 ```
 
 ```{r}
@@ -102,7 +120,7 @@ ggsave("../results/all_volcanoes.pdf", useDingbats=FALSE)
 table(pro_sig$log2FoldChange>0)
 prop.test(c(980,1312),c(2292,2292))
 
-ggplot(pro_all, aes(log2FoldChange_p, -log(padj_p), colour=padj_p<0.05, label=external_gene_name_p)) + geom_point(alpha=0.5, size=1) + scale_colour_manual(values=c("black","#cc2a2a")) + ggformat + labs(x="log2 Fold Change pro +/- TNF", y="-log adjusted p value", colour="Significant")
+pt <- ggplot(pro_all, aes(log2FoldChange_p, -log(padj_p), colour=padj_p<0.05, label=external_gene_name_p)) + geom_point(alpha=0.5, size=1) + scale_colour_manual(values=c("black","#cc2a2a")) + ggformat + labs(x="log2 Fold Change pro +/- TNF", y="-log adjusted p value", colour="Significant")
 ggsave("../results/volcano_pro_TNF.pdf", useDingbats=FALSE)
 ```
 
@@ -110,8 +128,13 @@ ggsave("../results/volcano_pro_TNF.pdf", useDingbats=FALSE)
 table(gran_sig$log2FoldChange>0)
 prop.test(c(3597,3809),c(7406,7406))
 
-ggplot(gran_all, aes(log2FoldChange_g, -log(padj_g), colour=padj_g<0.05, label=external_gene_name_g)) + geom_point(alpha=0.5) + scale_colour_manual(values=c("black","#cc2a2a")) + ggformat  + labs(x="log2 Fold Change gran +/- TNF", y="-log adjusted p value", colour="Significant")
+gt <- ggplot(gran_all, aes(log2FoldChange_g, -log(padj_g), colour=padj_g<0.05, label=external_gene_name_g)) + geom_point(alpha=0.5) + scale_colour_manual(values=c("black","#cc2a2a")) + ggformat  + labs(x="log2 Fold Change gran +/- TNF", y="-log adjusted p value", colour="Significant")
 ggsave("../results/volcano_gran_TNF.pdf", useDingbats=FALSE)
+```
+
+```{r}
+plot_grid(pt, gt)
+ggsave("../results/volcano_pro_gran_TNF.tiff", width=14)
 ```
 
 ###Venn diagram of the intersects
@@ -142,6 +165,51 @@ plot(V_pro_gran, show=list(Faces=FALSE,DarkMatter=FALSE))
 dev.off()
 ```
 
+```{r}
+pro_gran <- all_sig %>%
+  filter(padj_proTNF<0.05 | padj_granTNF<0.05) %>%
+  mutate(Significant=case_when(padj_proTNF<0.05 & padj_granTNF<0.05~"Both",
+                               padj_proTNF<0.05 & padj_granTNF>0.05~"Pro-specific",
+                               padj_proTNF>0.05 & padj_granTNF<0.05~"Gran-specific")) %>%
+  mutate(Significant=factor(Significant, levels=c("Both","Pro-specific","Gran-specific")))
+
+ggplot(pro_gran, aes(log2FoldChange_proTNF, log2FoldChange_granTNF)) + geom_point(alpha=0.5) + ggformat + geom_hline(yintercept=0) + geom_vline(xintercept = 0) + geom_smooth(method="lm") + facet_wrap(~Significant, scales="free")
+ggsave("../results/pro_gran_log2FC.pdf")
+
+both_tnf <- tidy(lm(log2FoldChange_granTNF~log2FoldChange_proTNF, data=subset(all_sig, padj_proTNF<0.05 & padj_granTNF<0.05)))
+both_tnf$model <- "Pro and Gran"
+pro <- tidy(lm(log2FoldChange_granTNF~log2FoldChange_proTNF, data=subset(all_sig, padj_proTNF<0.05 & padj_granTNF>0.05)))
+pro$model <- "Pro only"
+gran <- tidy(lm(log2FoldChange_granTNF~log2FoldChange_proTNF, data=subset(all_sig, padj_proTNF>0.05 & padj_granTNF<0.05)))
+gran$model <- "Gran only"
+
+TNF_lm <- rbind(both_tnf,pro,gran)
+```
+
+
+```{r}
+pro_genes <- unique(as.character(all$ens_gene_p[all$padj_p<0.05]))
+gran_genes <- unique(as.character(all$ens_gene_p[all$padj_g<0.05]))
+pro_all <- unique(as.character(all$ens_gene_p))
+gran_all <- unique(as.character(all$ens_gene_p))
+N <- 1000
+
+inter.r <- length(intersect(pro_genes,gran_genes))
+
+getSimIntersect <- function(pro_genes,gran_genes,pro_all,gran_all){
+  gA.sim <- sample(pro_all,length(pro_genes))
+  gB.sim <- sample(gran_all,length(gran_genes))
+  return(length(intersect(gA.sim,gB.sim)))
+}
+
+inter.sim <- replicate(N,getSimIntersect(pro_genes,gran_genes,pro_all,gran_all))
+
+plot(density(inter.sim))
+summary(inter.sim)
+quantile(inter.sim)
+1662/592
+```
+
 HL60 + TNF vs RA vs TPA - TNF1
 
 ```{r}
@@ -158,6 +226,31 @@ plot(V_pro, show=list(Faces=FALSE,DarkMatter=FALSE))
 dev.off()
 ```
 
+```{r}
+tnf <- unique(as.character(all$ens_gene_p[all$padj_p<0.05]))
+ra <- unique(as.character(all$ens_gene_p[all$padj_r<0.05]))
+tpa <- unique(as.character(all$ens_gene_p[all$padj_t<0.05]))
+all_genes <- unique(as.character(all$ens_gene_p))
+N <- 1000
+
+inter.r <- length(intersect(intersect(tnf,ra),tpa))
+
+getSimIntersect <- function(tnf,ra,tpa,all_genes){
+  gA.sim <- sample(all_genes,length(tnf))
+  gB.sim <- sample(all_genes,length(ra))
+  gC.sim <- sample(all_genes,length(tpa))
+  return(length(intersect(intersect(gA.sim,gB.sim),gC.sim)))
+}
+
+inter.sim <- replicate(N,getSimIntersect(tnf,ra,tpa,all_genes))
+p <- sum(inter.sim>=inter.r)/N
+plot(density(inter.sim))
+summary(inter.sim)
+inter.r
+quantile(inter.sim)
+inter.r/mean(inter.sim)
+```
+
 HL60-RA + TNF vs RA vs TPA
 
 ```{r}
@@ -171,6 +264,31 @@ V_gran
 pdf("../results/Venn_gran.pdf")
 plot(V_gran, show=list(Faces=FALSE,DarkMatter=FALSE))
 dev.off()
+```
+
+```{r}
+tnf <- unique(as.character(all$ens_gene_p[all$padj_g<0.05]))
+ra <- unique(as.character(all$ens_gene_p[all$padj_r<0.05]))
+tpa <- unique(as.character(all$ens_gene_p[all$padj_t<0.05]))
+all_genes <- unique(as.character(all$ens_gene_p))
+N <- 1000
+
+inter.r <- length(intersect(intersect(tnf,ra),tpa))
+
+getSimIntersect <- function(tnf,ra,tpa,all_genes){
+  gA.sim <- sample(all_genes,length(tnf))
+  gB.sim <- sample(all_genes,length(ra))
+  gC.sim <- sample(all_genes,length(tpa))
+  return(length(intersect(intersect(gA.sim,gB.sim),gC.sim)))
+}
+
+inter.sim <- replicate(N,getSimIntersect(tnf,ra,tpa,all_genes))
+p <- sum(inter.sim>=inter.r)/N
+plot(density(inter.sim))
+summary(inter.sim)
+inter.r
+quantile(inter.sim)
+inter.r/mean(inter.sim)
 ```
 
 ```{r}
@@ -267,4 +385,70 @@ prop test - TNF2 genes
 ```{r}
 #gran vs tpa
 prop.test(c(2090,2090),c(7406,13177))
+```
+
+###Diff comparisons
+
+
+RA vs TPA
+
+```{r}
+ven_diff <- NULL
+ven_diff$ra <- as.character(all$ens_gene_p[all$padj_r<0.05])
+ven_diff$tpa <- as.character(all$ens_gene_p[all$padj_t<0.05])
+
+
+V_diff <- Venn(ven_diff)
+V_diff
+pdf("../results/Venn_diff.pdf")
+plot(V_diff, show=list(Faces=FALSE,DarkMatter=FALSE))
+dev.off()
+```
+
+```{r}
+ra <- unique(as.character(all$ens_gene_p[all$padj_r<0.05]))
+tpa <- unique(as.character(all$ens_gene_p[all$padj_t<0.05]))
+all_genes <- unique(as.character(all$ens_gene_p))
+N <- 1000
+
+inter.r <- length(intersect(ra,tpa))
+
+getSimIntersect <- function(ra,tpa,all_genes){
+  gA.sim <- sample(all_genes,length(ra))
+  gB.sim <- sample(all_genes,length(tpa))
+  return(length(intersect(gA.sim,gB.sim)))
+}
+
+inter.sim <- replicate(N,getSimIntersect(ra,tpa,all_genes))
+p <- sum(inter.sim>=inter.r)/N
+plot(density(inter.sim))
+summary(inter.sim)
+inter.r
+quantile(inter.sim)
+inter.r/mean(inter.sim)
+```
+
+RA vs TPA
+
+```{r}
+ra_tpa <- all_sig %>%
+  filter(padj_ATRA<0.05 | padj_TPA<0.05) %>%
+  mutate(Significant=case_when(padj_ATRA<0.05 & padj_TPA<0.05~"Both",
+                               padj_ATRA<0.05 & padj_TPA>0.05~"ATRA-specific",
+                               padj_ATRA>0.05 & padj_TPA<0.05~"TPA-specific"))
+
+summary(lm(log2FoldChange_TPA~log2FoldChange_ATRA, data=ra_tpa))
+
+ggplot(ra_tpa, aes(log2FoldChange_ATRA, log2FoldChange_TPA)) + geom_point(alpha=0.5) + ggformat + geom_hline(yintercept=0) + geom_vline(xintercept = 0) + geom_smooth(method="lm") + facet_wrap(~Significant, scales="free")
+ggsave("../results/ATRA_vs_TPA_log2FC.pdf")
+
+both_diff <- tidy(lm(log2FoldChange_TPA~log2FoldChange_ATRA, data=subset(all_sig, padj_ATRA<0.05 & padj_TPA<0.05)))
+both_diff$model <- "ATRA and TPA"
+ra <- tidy(lm(log2FoldChange_TPA~log2FoldChange_ATRA, data=subset(all_sig, padj_ATRA<0.05 & padj_TPA>0.05)))
+ra$model <- "ATRA only"
+tpa <- tidy(lm(log2FoldChange_TPA~log2FoldChange_ATRA, data=subset(all_sig, padj_ATRA>0.05 & padj_TPA<0.05)))
+tpa$model <- "TPA only"
+
+all_lm <- rbind(TNF_lm,both_diff,ra,tpa)
+write.csv()
 ```

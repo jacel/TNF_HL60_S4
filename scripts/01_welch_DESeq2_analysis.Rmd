@@ -199,6 +199,6 @@ pheatmap(sampleDistMatrix,
          col=colors)
 
 plotPCA(vsd, intgroup=c("condition")) + ggformat + labs(colour="") + scale_colour_viridis_d(option="C", end=0.8)
-ggsave("../results/HL60_ATRA_TPA_PCA.pdf")
+ggsave("../results/HL60_ATRA_TPA_PCA.pdf", useDingbats=FALSE)
 ```
 
